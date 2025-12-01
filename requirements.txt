@@ -2,6 +2,5 @@ fastapi
 uvicorn
 pydantic
 requests
-beautifulsoup4
-googlesearch-python
 fpdf
+tavily-python

@@ -1,42 +1,44 @@
-import requests
-from bs4 import BeautifulSoup
-from googlesearch import search
-from fpdf import FPDF
-import base64
 import os
+import base64
+import requests
+from fpdf import FPDF
+from tavily import TavilyClient
 
-# --- 1. RESEARCH TOOL ---
+# --- 1. RESEARCH TOOL (TAVILY API) ---
 def research_client(name: str) -> str:
-    """Googles the client name, finds top 3 links, and scrapes the first one."""
+    """
+    Uses Tavily AI Search to get instant, structured data.
+    Speed: < 2 seconds. No blocking.
+    """
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        return "Error: Tavily API Key missing in Render."
+
     try:
-        # Search Google
-        results = list(search(name, num_results=3, advanced=True))
+        tavily = TavilyClient(api_key=api_key)
+        # Advanced search to get details without visiting every site manually
+        response = tavily.search(query=f"{name} profession brand CEO social media details", search_depth="advanced")
+        
+        summary = f"RESEARCH DOSSIER: {name}\n\n"
+        
+        # Parse the top 3 AI-curated results
+        results = response.get('results', [])[:3]
         if not results:
-            return f"No Google results found for {name}."
+            return f"No AI data found for {name}."
 
-        summary = f"Research for {name}:\n\nTop Links:\n"
-        for r in results:
-            summary += f"- {r.title}: {r.url}\n"
-
-        # Scrape First Link
-        first_url = results[0].url
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            page = requests.get(first_url, headers=headers, timeout=5)
-            soup = BeautifulSoup(page.content, "html.parser")
+        for i, result in enumerate(results, 1):
+            title = result.get('title', 'No Title')
+            url = result.get('url', 'No URL')
+            content = result.get('content', 'No Content')[:500] # Grab substantial context
             
-            title = soup.title.string if soup.title else "No Title"
-            text = soup.get_text(separator=" ", strip=True)[:500]
+            summary += f"SOURCE {i}: {title}\n"
+            summary += f"URL: {url}\n"
+            summary += f"INTEL: {content}...\n\n"
             
-            summary += f"\n--- SCRAPED DATA ({first_url}) ---\n"
-            summary += f"Title: {title}\n"
-            summary += f"Snippet: {text}...\n"
-        except Exception as e:
-            summary += f"\n[Scraping Failed: {e}]"
-
         return summary
+
     except Exception as e:
-        return f"Research failed: {e}"
+        return f"Tavily Search Failed: {str(e)}"
 
 # --- 2. PDF TOOL ---
 def create_pdf(filename: str, title: str, content: str) -> str:
@@ -47,7 +49,7 @@ def create_pdf(filename: str, title: str, content: str) -> str:
     pdf.ln(10)
     pdf.set_font("Arial", "", 12)
     
-    # Fix encoding issues
+    # Fix encoding for emojis/symbols that break PDFs
     content = content.encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 10, content)
     
@@ -57,43 +59,43 @@ def create_pdf(filename: str, title: str, content: str) -> str:
     pdf.output(filename)
     return os.path.abspath(filename)
 
-# --- 3. EMAIL TOOL (BREVO API) ---
+# --- 3. EMAIL TOOL (SMART SENDER) ---
 def send_email_with_attachment(to_email: str, subject: str, body: str, attachment_path: str = None) -> bool:
+    """
+    Sends email via Brevo API. 
+    Handles BOTH plain text and attachments automatically.
+    """
     BREVO_KEY = os.getenv("BREVO_KEY")
     SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 
     if not BREVO_KEY or not SENDER_EMAIL:
-        print("Error: Brevo credentials missing.")
+        print("Error: Credentials missing.")
         return False
 
     url = "https://api.brevo.com/v3/smtp/email"
-    
     headers = {
         "accept": "application/json",
         "api-key": BREVO_KEY,
         "content-type": "application/json"
     }
 
+    # Professional Sender Name
     payload = {
-        "sender": {"email": SENDER_EMAIL},
+        "sender": {"name": "The Devacia Team", "email": SENDER_EMAIL},
         "to": [{"email": to_email}],
         "subject": subject,
         "textContent": body
     }
 
-    # Handle Attachment
+    # If attachment exists, add it. If not, send plain text.
     if attachment_path and os.path.exists(attachment_path):
-        with open(attachment_path, "rb") as f:
-            # Encode file to Base64 for the API
-            encoded_content = base64.b64encode(f.read()).decode("utf-8")
-            filename = os.path.basename(attachment_path)
-            
-            payload["attachment"] = [
-                {
-                    "content": encoded_content,
-                    "name": filename
-                }
-            ]
+        try:
+            with open(attachment_path, "rb") as f:
+                encoded_content = base64.b64encode(f.read()).decode("utf-8")
+                filename = os.path.basename(attachment_path)
+                payload["attachment"] = [{"content": encoded_content, "name": filename}]
+        except Exception as e:
+            print(f"Attachment Error: {e}")
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
