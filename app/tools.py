@@ -57,10 +57,11 @@ def create_pdf(filename: str, title: str, content: str) -> str:
         filename += ".pdf"
     
     # Save to /tmp/ if on cloud, or local folder
+    # On Render, we should save to current directory or /tmp
     pdf.output(filename)
     return os.path.abspath(filename)
 
-# --- EMAIL TOOL (SECURE VERSION) ---
+# --- EMAIL TOOL (SSL FIX) ---
 def send_email_with_attachment(to_email: str, subject: str, body: str, attachment_path: str = None) -> bool:
     # SECURITY: Read from Environment Variables
     SENDER_EMAIL = os.getenv("SENDER_EMAIL")
@@ -85,9 +86,10 @@ def send_email_with_attachment(to_email: str, subject: str, body: str, attachmen
             part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(attachment_path)}")
             msg.attach(part)
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
+        # *** THE FIX: Use SMTP_SSL and Port 465 ***
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        
         text = msg.as_string()
         server.sendmail(SENDER_EMAIL, to_email, text)
         server.quit()
