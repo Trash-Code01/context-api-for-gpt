@@ -4,5 +4,5 @@ pydantic
 requests
 fpdf
 tavily-python
-twilio
 supabase
+twilio
