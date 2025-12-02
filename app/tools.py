@@ -29,20 +29,29 @@ def create_pdf(filename: str, title: str, content: str) -> str:
     pdf.cell(0, 10, title, ln=True, align="C")
     pdf.ln(10)
     pdf.set_font("Arial", "", 12)
+    # Fix encoding for compatibility
     content = content.encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 10, content)
     if not filename.endswith(".pdf"): filename += ".pdf"
     pdf.output(filename)
     return os.path.abspath(filename)
 
-# --- 3. EMAIL TOOL (BREVO API - RENDER SAFE) ---
+# --- 3. EMAIL TOOL (BREVO API - BYPASSES BLOCKS) ---
 def send_email_with_attachment(to_email: str, subject: str, body: str, attachment_path: str = None) -> bool:
     BREVO_KEY = os.getenv("BREVO_KEY")
     SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-    if not BREVO_KEY or not SENDER_EMAIL: return False
+    
+    if not BREVO_KEY or not SENDER_EMAIL:
+        print("Error: Brevo Credentials missing.")
+        return False
 
     url = "https://api.brevo.com/v3/smtp/email"
-    headers = {"accept": "application/json", "api-key": BREVO_KEY, "content-type": "application/json"}
+    headers = {
+        "accept": "application/json",
+        "api-key": BREVO_KEY,
+        "content-type": "application/json"
+    }
+    
     payload = {
         "sender": {"name": "The Devacia Team", "email": SENDER_EMAIL},
         "to": [{"email": to_email}],
@@ -55,12 +64,20 @@ def send_email_with_attachment(to_email: str, subject: str, body: str, attachmen
             with open(attachment_path, "rb") as f:
                 encoded = base64.b64encode(f.read()).decode("utf-8")
                 payload["attachment"] = [{"content": encoded, "name": os.path.basename(attachment_path)}]
-        except Exception as e: print(f"Attachment Error: {e}")
+        except Exception as e: 
+            print(f"Attachment Error: {e}")
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-        return response.status_code in [200, 201, 202]
-    except: return False
+        # Brevo returns 201 for success
+        if response.status_code in [200, 201, 202]:
+            return True
+        else:
+            print(f"Brevo Error: {response.text}")
+            return False
+    except Exception as e:
+        print(f"Email Request Failed: {e}")
+        return False
 
 # --- 4. SMS TOOL (TWILIO) ---
 def send_sms_message(to_number: str, message_body: str) -> bool:
@@ -68,7 +85,9 @@ def send_sms_message(to_number: str, message_body: str) -> bool:
     TOKEN = os.getenv("TWILIO_TOKEN")
     FROM = os.getenv("TWILIO_FROM_NUMBER")
     
-    if not SID or not TOKEN or not FROM: return False
+    if not SID or not TOKEN or not FROM: 
+        print("Error: Twilio SMS Credentials missing.")
+        return False
     try:
         client = TwilioClient(SID, TOKEN)
         client.messages.create(body=message_body, from_=FROM, to=to_number)
@@ -81,13 +100,17 @@ def send_sms_message(to_number: str, message_body: str) -> bool:
 def send_whatsapp_message(to_number: str, message_body: str) -> bool:
     SID = os.getenv("TWILIO_SID")
     TOKEN = os.getenv("TWILIO_TOKEN")
-    FROM = os.getenv("TWILIO_WHATSAPP_FROM") # whatsapp:+14155238886
+    # This must match the variable in Render EXACTLY
+    FROM = os.getenv("TWILIO_WHATSAPP_FROM") 
     
-    if not SID or not TOKEN or not FROM: return False
+    if not SID or not TOKEN or not FROM: 
+        print("Error: Twilio WhatsApp Credentials missing.")
+        return False
     try:
         client = TwilioClient(SID, TOKEN)
         if not to_number.startswith("whatsapp:"):
             to_number = f"whatsapp:{to_number}"
+            
         client.messages.create(body=message_body, from_=FROM, to=to_number)
         return True
     except Exception as e:
